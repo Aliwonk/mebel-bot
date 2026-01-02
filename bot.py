@@ -10,6 +10,7 @@ from telegram.ext import (
     filters,
 )
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from db import POSTGRES
 
 load_dotenv()
 
@@ -17,6 +18,8 @@ load_dotenv()
 class BOT:
     __token: str | None = None
     __app: Application | None = None
+    __db_connect = POSTGRES().get_connection()
+    __db = POSTGRES()
 
     def __init__(self):
         self.__token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -53,6 +56,17 @@ class BOT:
             for member in update.message.new_chat_members:
                 if member.id == context.bot.id:
                     bot_was_added = True
+                    table_exists = self.__db.table_exists("telegram_groups")
+
+                    if table_exists == True:
+                        cursor = self.__db_connect.cursor()
+                        data = (chat.id, chat.title)
+                        cursor.execute(
+                            f"INSERT INTO telegram_groups (chat_id, title) VALUES (%s, %s)",
+                            data,
+                        )
+                        self.__db_connect.commit()
+
                     keyboard = [
                         [
                             InlineKeyboardButton(
@@ -84,6 +98,7 @@ class BOT:
             print(f"🤖 Бот добавлен в группу: {chat.title} (ID: {chat.id})")
 
         except Exception as e:
+            self.__db_connect.rollback()
             print(f"❌ Ошибка в обработчике новых участников: {e}")
 
     def contains_links(self, text: str) -> bool:
@@ -129,7 +144,6 @@ class BOT:
 
         chat_id = message.chat_id
         user_id = message.from_user.id
-        message_id = message.id
         text = message.text or message.caption
 
         if self.contains_links(text):

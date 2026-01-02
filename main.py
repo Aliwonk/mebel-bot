@@ -1,9 +1,11 @@
-import asyncio
 from bot import BOT
+from db import POSTGRES
 
 
 def main() -> None:
-    BOT().start()
+    postgres = POSTGRES()
+    if postgres.connect() != None:
+        BOT().start()
 
 
 if __name__ == "__main__":
