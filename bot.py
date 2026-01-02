@@ -134,7 +134,7 @@ class BOT:
 
         if self.contains_links(text):
             is_admin = await self.check_user_admin(chat_id, user_id, context.bot)
-            if is_admin == True:
+            if is_admin == False:
                 await message.delete()
                 notice = await context.bot.send_message(
                     chat_id=chat_id,
