@@ -8,6 +8,7 @@ from telegram.ext import (
     ContextTypes,
     MessageHandler,
     filters,
+    CallbackQueryHandler,
 )
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from db import POSTGRES
@@ -26,12 +27,50 @@ class BOT:
         self.__app = Application.builder().token(self.__token).build()
 
     async def command_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text(
-            "👋 Добро пожаловать в Мебель Модно Стильно \n\n"
-            "🛋️ Превращаем пространство в уютное место для жизни. Диваны, кресла, столы, шкафы — всё для вашего интерьера.\n\n"
-            "🛍️ Где посмотреть ассортимент магазина?\n"
-            "👇 Нажмите синюю кнопку «Открыть» внизу"
-        )
+        chat = update.effective_chat
+
+        if context.args:
+            param = context.args
+            await update.message.reply_text(
+                "🤖 Это бот магазина «Мебель Модно Стильно» \n\n"
+                "🛍️ У нас вы найдете мебель, которая создает настроение и делает дом идеальным\n"
+                "❔ Готовы открыть для себя коллекцию диванов, кресел, столов и шкафов?\n\n"
+                "👇 Чтобы увидеть весь ассортимент, нажмите на синюю кнопку «Открыть» ниже.\n",
+            )
+        else:
+            if chat.type == "supergroup" or chat.type == "group":
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            "✅ Посмотреть",
+                            url=f"https://t.me/{os.getenv("USERNAME_BOT")}?start=from_group_{chat.title}",
+                        ),
+                    ],
+                ]
+
+                await update.message.reply_text(
+                    "👋 Вас приветствует бот магазина Мебель Модно Стильно \n\n"
+                    "🛋️ Превращаем пространство в уютное место для жизни. Диваны, кресла, столы, шкафы и т.д — всё для вашего интерьера.\n\n"
+                    "🛍️ Могу показать ассортимент и данные магазина\n"
+                    "👇 Нажмите кнопку «Посмотреть» внизу",
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
+            if chat.type == "private":
+                await update.message.reply_text(
+                    "👋 Вас приветствует бот магазина Мебель Модно Стильно \n\n"
+                    "🛋️ Превращаем пространство в уютное место для жизни. Диваны, кресла, столы, шкафы и т.д — всё для вашего интерьера.\n\n"
+                    "🛍️ Я могу показать ассортимент магазина\n"
+                    "👇 Нажмите синюю кнопку «Открыть» внизу",
+                )
+
+    async def callback_handler(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        query = update.callback_query
+        await query.answer()
+
+        print("command bot")
 
     async def new_chat_members(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -70,7 +109,8 @@ class BOT:
                     keyboard = [
                         [
                             InlineKeyboardButton(
-                                "✅ Открыть бота", callback_data="/open_bot"
+                                "✅ Открыть бота",
+                                url=f"https://t.me/{os.getenv("USERNAME_BOT")}?start=from_group_{chat.title}",
                             ),
                             InlineKeyboardButton("🔗 Сайт", url=os.getenv("URL_WEB")),
                         ],
@@ -82,7 +122,7 @@ class BOT:
                         "🛍️ Напишите команду /show, чтобы увидеть каталог товаров прямо в боте\n"
                         "📢 Делиться анонсами новых поступлений\n"
                         "🧹 Удаляет рекламные ссылки сохраняя чат чистым.\n\n"
-                        "👉 Используйте команду /bot, чтобы открыть бота."
+                        "👉 Используйте команду /start, чтобы взаимодействовать с ботом."
                     )
                     await context.bot.send_message(
                         chat_id=chat.id,
@@ -122,7 +162,6 @@ class BOT:
             domain = domain_match.group()
             # Проверяем, не является ли это частью уже найденного URL
             if not any(domain in url for url in urls):
-                # Добавляем протокол для проверки
                 if not domain.startswith(("http://", "https://", "www.")):
                     domain = "http://" + domain
                 urls.append(domain)
@@ -158,13 +197,14 @@ class BOT:
                     parse_mode="HTML",
                 )
 
-                await asyncio.sleep(2)
+                await asyncio.sleep(10)
                 await notice.delete()
 
     def start(self):
         try:
             print("БОТ ЗАПУЩЕН")
             self.__app.add_handler(CommandHandler("start", self.command_start))
+            self.__app.add_handler(CallbackQueryHandler(self.callback_handler))
             self.__app.add_handler(
                 MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
             )
