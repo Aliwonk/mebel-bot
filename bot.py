@@ -1,6 +1,8 @@
 import os
 import re
 import asyncio
+import threading
+from datetime import datetime
 from dotenv import load_dotenv
 from telegram.ext import (
     Application,
@@ -22,14 +24,15 @@ load_dotenv()
 class BOT:
     __token: str | None = None
     __app: Application | None = None
-    __db_connect = POSTGRES().get_connection()
-    __db = POSTGRES()
-    __shedulder: AsyncIOScheduler | None = None
+    __db_connect = None
+    __db = None
+    __scheduler: AsyncIOScheduler | None = None
 
     def __init__(self):
         self.__token = os.getenv("TELEGRAM_BOT_TOKEN")
         self.__app = Application.builder().token(self.__token).build()
-        self.__shedulder = AsyncIOScheduler()
+        self.__db = POSTGRES()
+        self.__db_connect = self.__db.get_connection()
 
     async def command_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat = update.effective_chat
@@ -48,7 +51,7 @@ class BOT:
                     [
                         InlineKeyboardButton(
                             "✅ Посмотреть",
-                            url=f"https://t.me/{os.getenv("USERNAME_BOT")}?start=from_group_{chat.title}",
+                            url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=from_group_{chat.title}",
                         ),
                     ],
                 ]
@@ -106,7 +109,7 @@ class BOT:
                         cursor = self.__db_connect.cursor()
                         data = (chat.id, chat.title)
                         cursor.execute(
-                            f"INSERT INTO telegram_groups (chat_id, title) VALUES (%s, %s)",
+                            "INSERT INTO telegram_groups (chat_id, title) VALUES (%s, %s)",
                             data,
                         )
                         self.__db_connect.commit()
@@ -115,7 +118,7 @@ class BOT:
                         [
                             InlineKeyboardButton(
                                 "✅ Открыть бота",
-                                url=f"https://t.me/{os.getenv("USERNAME_BOT")}?start=from_group_{chat.title}",
+                                url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=from_group_{chat.title}",
                             ),
                             InlineKeyboardButton("🔗 Сайт", url=os.getenv("URL_WEB")),
                         ],
@@ -342,20 +345,327 @@ class BOT:
                 await asyncio.sleep(10)
                 await notice.delete()
 
-    async def test(self) -> None:
-        print("11")
+    async def send_morning_reminder(self):
+        """
+        Отправка утреннего напоминания во все группы
+        """
+        try:
+            cursor = self.__db_connect.cursor()
+            cursor.execute("SELECT chat_id, title FROM telegram_groups")
+            groups = cursor.fetchall()
+
+            morning_messages = [
+                "🌅 Доброе утро, друзья! Напоминаем, что наш бот всегда готов помочь вам с выбором мебели.\n\n"
+                # "🛋️ Уже определились с выбором дивана или шкафа?",
+                "☀️ Добрый день начинается с хорошего настроения и удобной мебели!\n\n"
+                "🛍️ Не забывайте, что наш бот может показать весь ассортимент магазина.",
+                # "🌇 С добрым утром! Ваш дом может стать еще уютнее с правильной мебелью.\n\n"
+                # "❓ Есть вопросы по выбору? Наш бот всегда на связи!",
+            ]
+
+            import random
+
+            message = random.choice(morning_messages)
+            chat_id = groups[0][0]
+            title = groups[0][1]
+            try:
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            "✅ Открыть",
+                            url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=reminder_morning",
+                        ),
+                        # InlineKeyboardButton(
+                        #     "📞 Связаться", url="https://t.me/manager_username"
+                        # ),
+                    ],
+                ]
+
+                await self.__app.bot.send_message(
+                    chat_id=chat_id,
+                    text=message,
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
+                print(f"✅ Утреннее напоминание отправлено в группу: {title}")
+            except Exception as e:
+                print(f"❌ Ошибка при отправке в группу {title}: {e}")
+                # Если бот удален из группы, удаляем запись из БД
+                if "Chat not found" in str(e) or "bot was kicked" in str(e):
+                    cursor.execute(
+                        "DELETE FROM telegram_groups WHERE chat_id = %s", (chat_id,)
+                    )
+                    self.__db_connect.commit()
+            # for chat_id, title in groups:
+            #     try:
+            #         keyboard = [
+            #             [
+            #                 InlineKeyboardButton(
+            #                     "✅ Открыть",
+            #                     url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=reminder_morning",
+            #                 ),
+            #                 # InlineKeyboardButton(
+            #                 #     "📞 Связаться", url="https://t.me/manager_username"
+            #                 # ),
+            #             ],
+            #         ]
+
+            #         await self.__app.bot.send_message(
+            #             chat_id=chat_id,
+            #             text=message,
+            #             parse_mode="HTML",
+            #             reply_markup=InlineKeyboardMarkup(keyboard),
+            #         )
+            #         print(f"✅ Утреннее напоминание отправлено в группу: {title}")
+            #     except Exception as e:
+            #         print(f"❌ Ошибка при отправке в группу {title}: {e}")
+            #         # Если бот удален из группы, удаляем запись из БД
+            #         if "Chat not found" in str(e) or "bot was kicked" in str(e):
+            #             cursor.execute(
+            #                 "DELETE FROM telegram_groups WHERE chat_id = %s", (chat_id,)
+            #             )
+            #             self.__db_connect.commit()
+
+            cursor.close()
+
+        except Exception as e:
+            print(f"❌ Ошибка в утреннем напоминании: {e}")
+
+    async def send_evening_reminder(self):
+        """
+        Отправка вечернего напоминания во все группы
+        """
+        try:
+            cursor = self.__db_connect.cursor()
+            cursor.execute("SELECT chat_id, title FROM telegram_groups")
+            groups = cursor.fetchall()
+
+            evening_messages = [
+                "🌙 Добрый вечер! Время подумать об уюте в вашем доме.\n\n"
+                "🛋️ Наш магазин предлагает мебель для создания комфортной атмосферы.",
+                "✨ Вечер - отличное время для планирования обновления интерьера!\n\n"
+                "🌟 Добрый вечер! Не забывайте, что удобная мебель - залог хорошего отдыха.\n\n",
+            ]
+
+            import random
+
+            message = random.choice(evening_messages)
+            chat_id = groups[0][0]
+            title = groups[0][1]
+            try:
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            "🌃 Открыть бот",
+                            url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=reminder_evening",
+                        ),
+                        InlineKeyboardButton("🏪 Сайт", url=os.getenv("URL_WEB")),
+                    ],
+                ]
+
+                await self.__app.bot.send_message(
+                    chat_id=chat_id,
+                    text=message,
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                )
+                print(f"✅ Вечернее напоминание отправлено в группу: {title}")
+            except Exception as e:
+                print(f"❌ Ошибка при отправке в группу {title}: {e}")
+                # Если бот удален из группы, удаляем запись из БД
+                if "Chat not found" in str(e) or "bot was kicked" in str(e):
+                    cursor.execute(
+                        "DELETE FROM telegram_groups WHERE chat_id = %s", (chat_id,)
+                    )
+                    self.__db_connect.commit()
+            # for chat_id, title in groups:
+            #     try:
+            #         keyboard = [
+            #             [
+            #                 InlineKeyboardButton(
+            #                     "🌃 Открыть бот",
+            #                     url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=reminder_evening",
+            #                 ),
+            #                 InlineKeyboardButton("🏪 Сайт", url=os.getenv("URL_WEB")),
+            #             ],
+            #         ]
+
+            #         await self.__app.bot.send_message(
+            #             chat_id=chat_id,
+            #             text=message,
+            #             parse_mode="HTML",
+            #             reply_markup=InlineKeyboardMarkup(keyboard),
+            #         )
+            #         print(f"✅ Вечернее напоминание отправлено в группу: {title}")
+            #     except Exception as e:
+            #         print(f"❌ Ошибка при отправке в группу {title}: {e}")
+            #         # Если бот удален из группы, удаляем запись из БД
+            #         if "Chat not found" in str(e) or "bot was kicked" in str(e):
+            #             cursor.execute(
+            #                 "DELETE FROM telegram_groups WHERE chat_id = %s", (chat_id,)
+            #             )
+            #             self.__db_connect.commit()
+
+            cursor.close()
+
+        except Exception as e:
+            print(f"❌ Ошибка в вечернем напоминании: {e}")
+
+    async def send_weekly_update(self):
+        """
+        Еженедельное обновление о новинках и акциях
+        """
+        try:
+            cursor = self.__db_connect.cursor()
+            cursor.execute("SELECT chat_id, title FROM telegram_groups")
+            groups = cursor.fetchall()
+
+            weekly_messages = [
+                "📢 Новая неделя - новые возможности обновить интерьер!\n\n"
+                # "🔥 Специально для вас на этой неделе:\n"
+                # "• Новые модели диванов\n"
+                # "• Скидки на офисную мебель\n"
+                # "• Бесплатная доставка при заказе от 30 000₽\n\n"
+                "✨ Не упустите шанс сделать свой дом лучше!",
+                # "🌟 Неделя начинается с отличных новостей!\n\n"
+                # "🎁 В нашем магазине появились:\n"
+                # "• Стильные кресла для гостиной\n"
+                # "• Практичные столы для кухни\n"
+                # "• Современные шкафы-купе\n\n"
+                # "🏃‍♂️ Успейте первыми оценить новинки!",
+                # "📈 Первый день недели - время для новых идей!\n\n"
+                # "💡 На этой неделе у нас:\n"
+                # "• Обновление коллекции спальных гарнитуров\n"
+                # "• Специальные условия для постоянных клиентов\n"
+                # "• Акция «Приведи друга»\n\n"
+                "🎯 Сделайте ваш дом уютнее уже сегодня!",
+            ]
+
+            import random
+
+            message = random.choice(weekly_messages)
+
+            for chat_id, title in groups:
+                try:
+                    keyboard = [
+                        [
+                            InlineKeyboardButton(
+                                "🆕 Смотреть новинки",
+                                url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=weekly_new",
+                            ),
+                            InlineKeyboardButton(
+                                "🏷️ Акции",
+                                url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=sales",
+                            ),
+                        ],
+                        [
+                            InlineKeyboardButton(
+                                "📞 Заказать звонок", callback_data="request_call"
+                            ),
+                            InlineKeyboardButton(
+                                "🗺️ Как добраться",
+                                url=os.getenv("URL_WEB") + "/contacts",
+                            ),
+                        ],
+                    ]
+
+                    await self.__app.bot.send_message(
+                        chat_id=chat_id,
+                        text=message,
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                    )
+                    print(f"✅ Еженедельное обновление отправлено в группу: {title}")
+                except Exception as e:
+                    print(f"❌ Ошибка при отправке в группу {title}: {e}")
+                    # Если бот удален из группы, удаляем запись из БД
+                    if "Chat not found" in str(e) or "bot was kicked" in str(e):
+                        cursor.execute(
+                            "DELETE FROM telegram_groups WHERE chat_id = %s", (chat_id,)
+                        )
+                        self.__db_connect.commit()
+
+            cursor.close()
+
+        except Exception as e:
+            print(f"❌ Ошибка в еженедельном обновлении: {e}")
 
     def setup_scheduler(self):
+        """
+        Настройка планировщика для отправки напоминаний
+        """
         try:
-            self.__shedulder.add_job(self.test, "interval", seconds=3, id="test_job")
-            self.__shedulder.start()
-            print("Планировщик запущен")
+            # Создаем планировщик с собственным event loop
+            self.__scheduler = AsyncIOScheduler(timezone="Asia/Krasnoyarsk")
+
+            # Утреннее напоминание в 9:00 каждый день
+            self.__scheduler.add_job(
+                self.send_morning_reminder,
+                CronTrigger(hour=9, minute=0, timezone="Asia/Krasnoyarsk"),
+                id="morning_reminder",
+                replace_existing=True,
+            )
+
+            # Вечернее напоминание в 20:00 каждый день
+            self.__scheduler.add_job(
+                self.send_evening_reminder,
+                CronTrigger(hour=20, minute=0, timezone="Asia/Krasnoyarsk"),
+                id="evening_reminder",
+                replace_existing=True,
+            )
+
+            # Еженедельное напоминание о новинках (понедельник, 11:00)
+            # self.__scheduler.add_job(
+            #     self.send_weekly_update,
+            #     CronTrigger(
+            #         day_of_week="mon", hour=11, minute=0, timezone="Asia/Krasnoyarsk"
+            #     ),
+            #     id="weekly_update",
+            #     replace_existing=True,
+            # )
+
+            print("✅ Планировщик настроен")
+            print("📅 Расписание:")
+            print("   - Утреннее напоминание: 09:00 каждый день")
+            print("   - Вечернее напоминание: 20:00 каждый день")
+
         except Exception as err:
-            print(f"Ошибка настройки планировщика: {err}")
+            print(f"❌ Ошибка настройки планировщика: {err}")
+
+    async def start_scheduler(self):
+        """
+        Запуск планировщика после запуска бота
+        """
+        try:
+            if self.__scheduler and not self.__scheduler.running:
+                self.__scheduler.start()
+                print("✅ Планировщик запущен")
+
+                # Проверка запланированных задач
+                jobs = self.__scheduler.get_jobs()
+                print(f"📋 Запланировано задач: {len(jobs)}")
+                for job in jobs:
+                    print(f"   - {job.id}: следующее выполнение в {job.next_run_time}")
+
+        except Exception as e:
+            print(f"❌ Ошибка при запуске планировщика: {e}")
+
+    async def stop_scheduler(self):
+        """
+        Остановка планировщика при остановке бота
+        """
+        try:
+            if self.__scheduler and self.__scheduler.running:
+                self.__scheduler.shutdown(wait=False)
+                print("⏹️ Планировщик остановлен")
+        except Exception as e:
+            print(f"❌ Ошибка при остановке планировщика: {e}")
 
     def start(self):
         try:
-            print("БОТ ЗАПУЩЕН")
+            print("🤖 ЗАПУСК БОТА...")
+
+            # Регистрация обработчиков
             self.__app.add_handler(CommandHandler("start", self.command_start))
             self.__app.add_handler(CallbackQueryHandler(self.callback_handler))
             self.__app.add_handler(
@@ -366,6 +676,35 @@ class BOT:
                     filters.StatusUpdate.NEW_CHAT_MEMBERS, self.new_chat_members
                 )
             )
-            self.__app.run_polling()
+
+            # Настройка планировщика
+            print("⚙️ Настройка планировщика...")
+            self.setup_scheduler()
+
+            # Создаем и запускаем event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            try:
+                # Запускаем планировщик
+                if self.__scheduler and not self.__scheduler.running:
+                    loop.run_until_complete(self.start_scheduler())
+
+                print("🚀 Запуск бота...")
+                # Запуск бота с нашим event loop
+                self.__app.run_polling(
+                    allowed_updates=Update.ALL_TYPES,
+                    close_loop=False,
+                )
+
+            finally:
+                # Останавливаем планировщик
+                if self.__scheduler and self.__scheduler.running:
+                    loop.run_until_complete(self.stop_scheduler())
+                loop.close()
+                print("👋 Бот завершил работу")
+
+        except KeyboardInterrupt:
+            print("\n🛑 Бот остановлен пользователем")
         except BaseException as err:
-            print(f"При запуске бота произошла ошибка: {err}")
+            print(f"❌ При запуске бота произошла ошибка: {err}")
