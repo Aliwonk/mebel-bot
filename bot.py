@@ -158,7 +158,26 @@ class BOT:
         if not text or not isinstance(text, str):
             return False
 
-        # Очистка текста от разметки
+        # Проверка на Markdown ссылки [текст](URL)
+        if re.search(r"\[.*?\]\(.*?\)", text):
+            return True
+
+        # Проверка на HTML ссылки <a href="...">текст</a>
+        if re.search(r'<a\s+[^>]*href="[^"]*"[^>]*>.*?</a>', text, re.IGNORECASE):
+            return True
+
+        # Проверка на Telegram-специфичные ссылки
+        telegram_link_patterns = [
+            r"\[.*?\]\((?:t\.me|telegram\.me|tg://).*?\)",  # Markdown с Telegram ссылкой
+            r'<a\s+[^>]*href="(?:t\.me|telegram\.me|tg://)[^"]*"[^>]*>.*?</a>',  # HTML с Telegram ссылкой
+        ]
+
+        for pattern in telegram_link_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                return True
+
+        # Теперь проверяем обычные ссылки в очищенном тексте
+        # Очистка текста от разметки для поиска обычных ссылок
         # Удаление Markdown ссылок [текст](URL)
         clean_text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
         # Удаление HTML ссылок <a href="URL">текст</a>
@@ -280,17 +299,7 @@ class BOT:
                         # Если дошли сюда, значит это похоже на настоящую ссылку
                         return True
 
-        # Дополнительная проверка: ищем URL в Markdown и HTML, которые могли быть пропущены
-        # Проверяем оригинальный текст на наличие паттернов ссылок
-        if re.search(r"\[[^\]]+\]\([^)]+\)", text):  # Markdown ссылки
-            return True
-        if re.search(
-            r'<a\s+[^>]*href="[^"]*"[^>]*>', text, re.IGNORECASE
-        ):  # HTML ссылки
-            return True
-
         # Проверка на скрытые ссылки с использованием Unicode или обфускации
-        # (например, использование похожих символов)
         suspicious_patterns = [
             r"[а-яА-ЯёЁ]*\.(?:рф|com|org|net)[а-яА-ЯёЁ]*",  # Кириллические домены
             r"\b[\w\-]+\.[\w\-]+\.[\w\-]+\b",  # Многоточечные структуры
@@ -323,27 +332,114 @@ class BOT:
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         message = update.message
 
-        if not message.text and not message.caption:
+        # Проверяем тип сообщения
+        message_has_media = bool(
+            message.photo
+            or message.video
+            or message.document
+            or message.audio
+            or message.voice
+            or message.sticker
+            or message.animation
+            or message.video_note
+        )
+
+        # Проверяем текст или подпись к медиа
+        text_to_check = None
+        if message.text:
+            if message.text_html_urled:
+                text_to_check = message.text_html_urled
+            else:
+                text_to_check = message.text
+        elif message.caption:
+            link = None
+
+            # Проверка ссылки
+            if len(message.caption_entities) > 0:
+                for option in message.caption_entities:
+                    if option.type == "text_link" or option.type == "url":
+                        link = option.url
+
+            text_to_check = f"{message.caption} {link}"
+
+        # Если нет текста для проверки и нет медиа, выходим
+        if not text_to_check and not message_has_media:
             return
 
         chat_id = message.chat_id
         user_id = message.from_user.id
-        text = message.text or message.caption
 
-        if self.contains_links(text):
+        # Проверяем наличие ссылок в тексте/подписи
+        if text_to_check and self.contains_links(text_to_check):
             is_admin = await self.check_user_admin(chat_id, user_id, context.bot)
-            if is_admin == False:
-                await message.delete()
-                notice = await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"❌ {message.from_user.mention_html()} ваше сообщение в группе было удалено, "
-                    f"так как содержит ссылку.\n\n"
-                    f"Ссылки могут отправлять только администратор группы",
-                    parse_mode="HTML",
-                )
+            if not is_admin:
+                await self.delete_message_with_notice(message, context)
+                return
 
-                await asyncio.sleep(10)
-                await notice.delete()
+        # Дополнительная проверка для документов (например, PDF с рекламой)
+        if message.document:
+            document = message.document
+            # Проверяем название файла
+            if document.file_name and self.contains_links(document.file_name):
+                is_admin = await self.check_user_admin(chat_id, user_id, context.bot)
+                if not is_admin:
+                    await self.delete_message_with_notice(message, context)
+                    return
+
+            # Проверяем MIME тип на наличие потенциально опасных файлов
+            suspicious_mime_types = [
+                "application/vnd.android.package-archive",  # APK
+                "application/x-msdownload",  # EXE
+                "application/x-executable",
+                "application/x-sh",
+                "application/x-shellscript",
+                "text/html",  # HTML файлы могут содержать скрытые ссылки
+                "application/xhtml+xml",
+                "application/vnd.ms-powerpoint",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ]
+
+            if document.mime_type in suspicious_mime_types:
+                is_admin = await self.check_user_admin(chat_id, user_id, context.bot)
+                if not is_admin:
+                    notice_text = (
+                        f"❌ {message.from_user.mention_html()} ваше сообщение в группе было удалено, "
+                        f"так как содержит файл потенциально опасного типа ({document.mime_type}).\n\n"
+                        f"Такие файлы могут отправлять только администратор группы"
+                    )
+                    await message.delete()
+                    notice = await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=notice_text,
+                        parse_mode="HTML",
+                    )
+                    await asyncio.sleep(10)
+                    await notice.delete()
+                    return
+
+    async def delete_message_with_notice(self, message, context):
+        """Удаляет сообщение и отправляет уведомление"""
+        try:
+            await message.delete()
+
+            notice_text = (
+                f"❌ {message.from_user.mention_html()} ваше сообщение в группе было удалено, "
+                f"так как содержит ссылку.\n\n"
+                f"Ссылки могут отправлять только администратор группы"
+            )
+
+            notice = await context.bot.send_message(
+                chat_id=message.chat_id,
+                text=notice_text,
+                parse_mode="HTML",
+            )
+
+            # Удаляем уведомление через 10 секунд
+            await asyncio.sleep(10)
+            await notice.delete()
+
+        except Exception as e:
+            print(f"❌ Ошибка при удалении сообщения: {e}")
 
     async def send_morning_reminder(self):
         """
@@ -356,11 +452,8 @@ class BOT:
 
             morning_messages = [
                 "🌅 Доброе утро, друзья! Я бот всегда готов помочь вам с выбором мебели.\n\n"
-                # "🛋️ Уже определились с выбором дивана или шкафа?",
                 "☀️ Добрый день начинается с хорошего настроения и удобной мебели!\n\n"
                 "🛍️ Не забывайте, что наш бот может показать весь ассортимент магазина.",
-                # "🌇 С добрым утром! Ваш дом может стать еще уютнее с правильной мебелью.\n\n"
-                # "❓ Есть вопросы по выбору? Наш бот всегда на связи!",
             ]
 
             import random
@@ -375,9 +468,6 @@ class BOT:
                                 "✅ Открыть",
                                 url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=reminder_morning",
                             ),
-                            # InlineKeyboardButton(
-                            #     "📞 Связаться", url="https://t.me/manager_username"
-                            # ),
                         ],
                     ]
 
@@ -428,11 +518,9 @@ class BOT:
                 try:
                     keyboard = [
                         [
-                            # InlineKeyboardButton(
-                            #     "🤖 Открыть бота",
-                            #     url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=reminder_evening",
-                            # ),
-                            InlineKeyboardButton("✅ Открыть", url=os.getenv("URL_WEB")),
+                            InlineKeyboardButton(
+                                "✅ Открыть", url=os.getenv("URL_WEB")
+                            ),
                         ],
                     ]
 
@@ -489,11 +577,9 @@ class BOT:
                 try:
                     keyboard = [
                         [
-                            # InlineKeyboardButton(
-                            #     "🌃 Открыть бот",
-                            #     url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=reminder_dinner",
-                            # ),
-                            InlineKeyboardButton("✅ Открыть", url=os.getenv("URL_WEB")),
+                            InlineKeyboardButton(
+                                "✅ Открыть", url=os.getenv("URL_WEB")
+                            ),
                         ],
                     ]
 
@@ -529,22 +615,7 @@ class BOT:
 
             weekly_messages = [
                 "📢 Новая неделя - новые возможности обновить интерьер!\n\n"
-                # "🔥 Специально для вас на этой неделе:\n"
-                # "• Новые модели диванов\n"
-                # "• Скидки на офисную мебель\n"
-                # "• Бесплатная доставка при заказе от 30 000₽\n\n"
                 "✨ Не упустите шанс сделать свой дом лучше!",
-                # "🌟 Неделя начинается с отличных новостей!\n\n"
-                # "🎁 В нашем магазине появились:\n"
-                # "• Стильные кресла для гостиной\n"
-                # "• Практичные столы для кухни\n"
-                # "• Современные шкафы-купе\n\n"
-                # "🏃‍♂️ Успейте первыми оценить новинки!",
-                # "📈 Первый день недели - время для новых идей!\n\n"
-                # "💡 На этой неделе у нас:\n"
-                # "• Обновление коллекции спальных гарнитуров\n"
-                # "• Специальные условия для постоянных клиентов\n"
-                # "• Акция «Приведи друга»\n\n"
                 "🎯 Сделайте ваш дом уютнее уже сегодня!",
             ]
 
@@ -629,16 +700,6 @@ class BOT:
                 replace_existing=True,
             )
 
-            # Еженедельное напоминание о новинках (понедельник, 11:00)
-            # self.__scheduler.add_job(
-            #     self.send_weekly_update,
-            #     CronTrigger(
-            #         day_of_week="mon", hour=11, minute=0, timezone="Asia/Krasnoyarsk"
-            #     ),
-            #     id="weekly_update",
-            #     replace_existing=True,
-            # )
-
             print("✅ Планировщик настроен")
             print("📅 Расписание:")
             print("   - Утреннее напоминание: 09:00 каждый день")
@@ -684,9 +745,17 @@ class BOT:
             # Регистрация обработчиков
             self.__app.add_handler(CommandHandler("start", self.command_start))
             self.__app.add_handler(CallbackQueryHandler(self.callback_handler))
+
+            # Обработчик для ВСЕХ сообщений (включая медиа)
             self.__app.add_handler(
-                MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
+                MessageHandler(
+                    filters.ALL
+                    & ~filters.COMMAND
+                    & ~filters.StatusUpdate.NEW_CHAT_MEMBERS,
+                    self.handle_message,
+                )
             )
+
             self.__app.add_handler(
                 MessageHandler(
                     filters.StatusUpdate.NEW_CHAT_MEMBERS, self.new_chat_members
