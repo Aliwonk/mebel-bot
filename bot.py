@@ -355,7 +355,7 @@ class BOT:
             groups = cursor.fetchall()
 
             morning_messages = [
-                "🌅 Доброе утро, друзья! Напоминаем, что наш бот всегда готов помочь вам с выбором мебели.\n\n"
+                "🌅 Доброе утро, друзья! Я бот всегда готов помочь вам с выбором мебели.\n\n"
                 # "🛋️ Уже определились с выбором дивана или шкафа?",
                 "☀️ Добрый день начинается с хорошего настроения и удобной мебели!\n\n"
                 "🛍️ Не забывайте, что наш бот может показать весь ассортимент магазина.",
@@ -366,65 +366,36 @@ class BOT:
             import random
 
             message = random.choice(morning_messages)
-            chat_id = groups[0][0]
-            title = groups[0][1]
-            try:
-                keyboard = [
-                    [
-                        InlineKeyboardButton(
-                            "✅ Открыть",
-                            url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=reminder_morning",
-                        ),
-                        # InlineKeyboardButton(
-                        #     "📞 Связаться", url="https://t.me/manager_username"
-                        # ),
-                    ],
-                ]
 
-                await self.__app.bot.send_message(
-                    chat_id=chat_id,
-                    text=message,
-                    parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                )
-                print(f"✅ Утреннее напоминание отправлено в группу: {title}")
-            except Exception as e:
-                print(f"❌ Ошибка при отправке в группу {title}: {e}")
-                # Если бот удален из группы, удаляем запись из БД
-                if "Chat not found" in str(e) or "bot was kicked" in str(e):
-                    cursor.execute(
-                        "DELETE FROM telegram_groups WHERE chat_id = %s", (chat_id,)
+            for chat_id, title in groups:
+                try:
+                    keyboard = [
+                        [
+                            InlineKeyboardButton(
+                                "✅ Открыть",
+                                url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=reminder_morning",
+                            ),
+                            # InlineKeyboardButton(
+                            #     "📞 Связаться", url="https://t.me/manager_username"
+                            # ),
+                        ],
+                    ]
+
+                    await self.__app.bot.send_message(
+                        chat_id=chat_id,
+                        text=message,
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(keyboard),
                     )
-                    self.__db_connect.commit()
-            # for chat_id, title in groups:
-            #     try:
-            #         keyboard = [
-            #             [
-            #                 InlineKeyboardButton(
-            #                     "✅ Открыть",
-            #                     url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=reminder_morning",
-            #                 ),
-            #                 # InlineKeyboardButton(
-            #                 #     "📞 Связаться", url="https://t.me/manager_username"
-            #                 # ),
-            #             ],
-            #         ]
-
-            #         await self.__app.bot.send_message(
-            #             chat_id=chat_id,
-            #             text=message,
-            #             parse_mode="HTML",
-            #             reply_markup=InlineKeyboardMarkup(keyboard),
-            #         )
-            #         print(f"✅ Утреннее напоминание отправлено в группу: {title}")
-            #     except Exception as e:
-            #         print(f"❌ Ошибка при отправке в группу {title}: {e}")
-            #         # Если бот удален из группы, удаляем запись из БД
-            #         if "Chat not found" in str(e) or "bot was kicked" in str(e):
-            #             cursor.execute(
-            #                 "DELETE FROM telegram_groups WHERE chat_id = %s", (chat_id,)
-            #             )
-            #             self.__db_connect.commit()
+                    print(f"✅ Утреннее напоминание отправлено в группу: {title}")
+                except Exception as e:
+                    print(f"❌ Ошибка при отправке в группу {title}: {e}")
+                    # Если бот удален из группы, удаляем запись из БД
+                    if "Chat not found" in str(e) or "bot was kicked" in str(e):
+                        cursor.execute(
+                            "DELETE FROM telegram_groups WHERE chat_id = %s", (chat_id,)
+                        )
+                        self.__db_connect.commit()
 
             cursor.close()
 
@@ -441,75 +412,111 @@ class BOT:
             groups = cursor.fetchall()
 
             evening_messages = [
-                "🌙 Добрый вечер! Время подумать об уюте в вашем доме.\n\n"
+                "🌙 Добрый вечер! Время подумать об уюте в вашем доме.\n"
+                "🤖 Я бот всегда готов помочь вам с выбором мебели.\n\n"
                 "🛋️ Наш магазин предлагает мебель для создания комфортной атмосферы.",
-                "✨ Вечер - отличное время для планирования обновления интерьера!\n\n"
+                "✨ Вечер - отличное время для планирования обновления интерьера!\n"
+                "🤖 Я бот всегда готов помочь вам с выбором мебели.\n\n"
                 "🌟 Добрый вечер! Не забывайте, что удобная мебель - залог хорошего отдыха.\n\n",
             ]
 
             import random
 
             message = random.choice(evening_messages)
-            chat_id = groups[0][0]
-            title = groups[0][1]
-            try:
-                keyboard = [
-                    [
-                        InlineKeyboardButton(
-                            "🌃 Открыть бот",
-                            url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=reminder_evening",
-                        ),
-                        InlineKeyboardButton("🏪 Сайт", url=os.getenv("URL_WEB")),
-                    ],
-                ]
 
-                await self.__app.bot.send_message(
-                    chat_id=chat_id,
-                    text=message,
-                    parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                )
-                print(f"✅ Вечернее напоминание отправлено в группу: {title}")
-            except Exception as e:
-                print(f"❌ Ошибка при отправке в группу {title}: {e}")
-                # Если бот удален из группы, удаляем запись из БД
-                if "Chat not found" in str(e) or "bot was kicked" in str(e):
-                    cursor.execute(
-                        "DELETE FROM telegram_groups WHERE chat_id = %s", (chat_id,)
+            for chat_id, title in groups:
+                try:
+                    keyboard = [
+                        [
+                            # InlineKeyboardButton(
+                            #     "🤖 Открыть бота",
+                            #     url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=reminder_evening",
+                            # ),
+                            InlineKeyboardButton("✅ Открыть", url=os.getenv("URL_WEB")),
+                        ],
+                    ]
+
+                    await self.__app.bot.send_message(
+                        chat_id=chat_id,
+                        text=message,
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(keyboard),
                     )
-                    self.__db_connect.commit()
-            # for chat_id, title in groups:
-            #     try:
-            #         keyboard = [
-            #             [
-            #                 InlineKeyboardButton(
-            #                     "🌃 Открыть бот",
-            #                     url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=reminder_evening",
-            #                 ),
-            #                 InlineKeyboardButton("🏪 Сайт", url=os.getenv("URL_WEB")),
-            #             ],
-            #         ]
-
-            #         await self.__app.bot.send_message(
-            #             chat_id=chat_id,
-            #             text=message,
-            #             parse_mode="HTML",
-            #             reply_markup=InlineKeyboardMarkup(keyboard),
-            #         )
-            #         print(f"✅ Вечернее напоминание отправлено в группу: {title}")
-            #     except Exception as e:
-            #         print(f"❌ Ошибка при отправке в группу {title}: {e}")
-            #         # Если бот удален из группы, удаляем запись из БД
-            #         if "Chat not found" in str(e) or "bot was kicked" in str(e):
-            #             cursor.execute(
-            #                 "DELETE FROM telegram_groups WHERE chat_id = %s", (chat_id,)
-            #             )
-            #             self.__db_connect.commit()
+                    print(f"✅ Вечернее напоминание отправлено в группу: {title}")
+                except Exception as e:
+                    print(f"❌ Ошибка при отправке в группу {title}: {e}")
+                    # Если бот удален из группы, удаляем запись из БД
+                    if "Chat not found" in str(e) or "bot was kicked" in str(e):
+                        cursor.execute(
+                            "DELETE FROM telegram_groups WHERE chat_id = %s", (chat_id,)
+                        )
+                        self.__db_connect.commit()
 
             cursor.close()
 
         except Exception as e:
             print(f"❌ Ошибка в вечернем напоминании: {e}")
+
+    async def send_dinner_reminder(self):
+        """
+        Отправка обеденный напоминания во все группы
+        """
+        try:
+            cursor = self.__db_connect.cursor()
+            cursor.execute("SELECT chat_id, title FROM telegram_groups")
+            groups = cursor.fetchall()
+
+            dinner_messages = [
+                "🕛 Добрый день! Идеальное время для обеденного перерыва.\n"
+                "🤖 Я бот всегда готов помочь вам с выбором мебели.\n\n"
+                "🛋️ Отдохните на удобном диване — комфортная мебель делает любой отдых лучше!",
+                "🍽️ Добрый день! Пора сделать паузу и подкрепиться.\n"
+                "🤖 Я бот всегда готов помочь вам с выбором мебели.\n\n"
+                "✨ Напоминаю, что удобный обеденный стол — залог приятных семейных трапез и дружеских встреч.",
+                "☀️ Добрый день! Время для небольшого перерыва.\n"
+                "🤖 Я бот всегда готов помочь вам с выбором мебели.\n\n"
+                "🏠 Мечтаете об уютном уголке для отдыха? Наша мебель поможет создать идеальное пространство для вашего комфорта!",
+                "💫 Добрый день! Обеденный перерыв — отличное время подумать об уюте в доме.\n"
+                "🤖 Я бот всегда готов помочь вам с выбором мебели.\n\n"
+                "🪑 Правильно подобранная мебель превращает обычный обед в особенный ритуал наслаждения.",
+            ]
+
+            import random
+
+            message = random.choice(dinner_messages)
+
+            for chat_id, title in groups:
+                try:
+                    keyboard = [
+                        [
+                            # InlineKeyboardButton(
+                            #     "🌃 Открыть бот",
+                            #     url=f"https://t.me/{os.getenv('USERNAME_BOT')}?start=reminder_dinner",
+                            # ),
+                            InlineKeyboardButton("✅ Открыть", url=os.getenv("URL_WEB")),
+                        ],
+                    ]
+
+                    await self.__app.bot.send_message(
+                        chat_id=chat_id,
+                        text=message,
+                        parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                    )
+                    print(f"✅ Обеденное напоминание отправлено в группу: {title}")
+                except Exception as e:
+                    print(f"❌ Ошибка при отправке в группу {title}: {e}")
+                    # Если бот удален из группы, удаляем запись из БД
+                    if "Chat not found" in str(e) or "bot was kicked" in str(e):
+                        cursor.execute(
+                            "DELETE FROM telegram_groups WHERE chat_id = %s", (chat_id,)
+                        )
+                        self.__db_connect.commit()
+
+            cursor.close()
+
+        except Exception as e:
+            print(f"❌ Ошибка в обеденном напоминании: {e}")
 
     async def send_weekly_update(self):
         """
@@ -606,10 +613,18 @@ class BOT:
                 replace_existing=True,
             )
 
-            # Вечернее напоминание в 20:00 каждый день
+            # Обеденное напоминание в 12:00 каждый день
+            self.__scheduler.add_job(
+                self.send_dinner_reminder,
+                CronTrigger(hour=12, minute=0, timezone="Asia/Krasnoyarsk"),
+                id="dinner_reminder",
+                replace_existing=True,
+            )
+
+            # Вечернее напоминание в 18:00 каждый день
             self.__scheduler.add_job(
                 self.send_evening_reminder,
-                CronTrigger(hour=20, minute=0, timezone="Asia/Krasnoyarsk"),
+                CronTrigger(hour=18, minute=0, timezone="Asia/Krasnoyarsk"),
                 id="evening_reminder",
                 replace_existing=True,
             )
@@ -627,7 +642,8 @@ class BOT:
             print("✅ Планировщик настроен")
             print("📅 Расписание:")
             print("   - Утреннее напоминание: 09:00 каждый день")
-            print("   - Вечернее напоминание: 20:00 каждый день")
+            print("   - Обеденное напоминание: 12:00 каждый день")
+            print("   - Вечернее напоминание: 18:00 каждый день")
 
         except Exception as err:
             print(f"❌ Ошибка настройки планировщика: {err}")
